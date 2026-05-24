@@ -3,11 +3,14 @@ import re
 import mysql.connector
 from datetime import datetime
 import uuid
-import qrcode          # NOVO
-from PIL import Image  # NOVO
+#import qrcode          # NOVO
+#from PIL import Image  # NOVO
+
+
+# CONFIGURAÇÃO DA TELA
 
 ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("dark-blue")
+ctk.set_default_color_theme("blue")
 
 def formatar_data(event):
     if event.keysym in ("BackSpace", "Delete", "Left", "Right"): return
@@ -52,20 +55,21 @@ def formatar_hora(event):
     campo.delete(0, "end")
     campo.insert(0, resultado)
 
+# SALVAR NO DB
 def store_database():
     nome = entry_nome.get()
     idade = entry_idade.get()
     risco = risco_var.get()
     hora = entry_hora.get()
-   
+    
     if not (nome and idade and risco and hora):
-        feedback_label.configure(text="PREENCHA TODOS OS CAMPOS OBRIGATÓRIOS!", text_color="red")
+        feedback_label.configure(text="PREENCHA TODOS OS CAMPOS OBRIGATÓRIOS!", text_color="#D32F2F")
         return
 
     try:
         data_nasc = datetime.strptime(idade, "%d/%m/%Y").strftime("%Y-%m-%d")
     except ValueError:
-        feedback_label.configure(text="DATA DE NASCIMENTO INVÁLIDA!", text_color="red")
+        feedback_label.configure(text="DATA DE NASCIMENTO INVÁLIDA!", text_color="#D32F2F")
         return
 
     try:
@@ -73,15 +77,10 @@ def store_database():
         risco_id = mapa_risco.get(risco, 5)
         comorb_map = {item[0]: (1 if item[1].get() else 0) for item in variaveis1}
 
-        conexao = mysql.connector.connect(
-            host="163.176.235.85",
-            port=3306,
-            database="filago",
-            user="PREENCHER USUARIO",
-            password="PREENCHER SENHA!"
-        )
+        conexao = mysql.connector.connect(host="163.176.235.85",port=3306,database="filago",user="substituir_usuario",password="substituir_senha")
         cursor = conexao.cursor()
 
+        # INSERT DE PAC
         sql_atendimento = """
             INSERT INTO upa_atendimentos 
             (unidade_id, protocolo, senha, numero_senha, paciente_nome, paciente_data_nascimento, classificacao_risco_id, status_atual) 
@@ -97,6 +96,7 @@ def store_database():
             val = val.strip()
             return float(val) if val else None
 
+        # INSERT DE TRIAGEM
         sql_triagem = """
             INSERT INTO upa_triagem 
             (atendimento_id, gestante, nivel_dor, saturacao, temperatura, pressao_arterial, peso, frequencia_cardiaca, alergias, queixa_observacao, hipertenso, diabetes, cancer, pneumopatia, tosse, outros_sintomas, prioridade_clinica) 
@@ -105,7 +105,7 @@ def store_database():
         
         triagem_vals = (
             atendimento_id,
-            1 if var.get() == "S" else 0,
+            1 if var_gestante.get() == "S" else 0,
             int(combobox_dor.get()) if combobox_dor.get().isdigit() else None,
             clean_float(entry_saturacao.get()),
             clean_float(entry_temp.get()),
@@ -126,11 +126,9 @@ def store_database():
         cursor.execute(sql_triagem, triagem_vals)
         conexao.commit()
         
-        feedback_label.configure(text="PACIENTE INSERIDO NO BANCO", text_color="green")
+        feedback_label.configure(text="✔️ CADASTRO REALIZADO COM SUCESSO!", text_color="#15803D")
 
-        # =========================================================
-        # GERAÇÃO DO QR CODE E ABERTURA DO POP-UP
-        # =========================================================
+        # GERA QR CODE
         url_paciente = f"http://163.176.235.85:5000/?protocolo={proto}"
         
         qr = qrcode.QRCode(version=1, box_size=10, border=4)
@@ -138,154 +136,164 @@ def store_database():
         qr.make(fit=True)
         img_qr = qr.make_image(fill_color="black", back_color="white")
         
-        # Cria a janela pop-up
-        janela_qr = ctk.CTkToplevel(app) # amarrado à janela principal 'app'
+        janela_qr = ctk.CTkToplevel(app) 
         janela_qr.title(f"Protocolo - {nome}")
         janela_qr.geometry("400x450")
-        janela_qr.attributes("-topmost", True) # Mantém por cima
+        janela_qr.attributes("-topmost", True)
         
-        # Exibe a imagem
         ctk_img = ctk.CTkImage(light_image=img_qr.get_image(), dark_image=img_qr.get_image(), size=(300, 300))
         lbl_qr = ctk.CTkLabel(janela_qr, image=ctk_img, text="")
         lbl_qr.pack(pady=20)
         
-        # Texto de instrução
-        lbl_info = ctk.CTkLabel(janela_qr, text=f"Protocolo: {proto}\nMostre ao paciente ou imprima.", font=("Roboto", 14, "bold"))
+        lbl_info = ctk.CTkLabel(janela_qr, text=f"Protocolo: {proto}\nEntregue ao paciente para scanear.", font=("Arial", 14, "bold"), text_color="#1E293B")
         lbl_info.pack()
-        # =========================================================
 
+        # Limpar os campos principais - opcional
+        entry_nome.delete(0, 'end')
+        entry_idade.delete(0, 'end')
+        
     except Exception as e:
         if 'conexao' in locals(): conexao.rollback()
-        feedback_label.configure(text=f"ERRO: {str(e)}", text_color="red")
+        feedback_label.configure(text=f"❌ ERRO: {str(e)}", text_color="#D32F2F")
     finally:
         if 'conexao' in locals() and conexao.is_connected():
             cursor.close()
             conexao.close()
 
+# INTERFACE GRÁFICA
 app = ctk.CTk()
-app.title("CADASTRO DE PACIENTE")
-app.geometry("890x490")
+app.title("Cadastro de Paciente")
+app.geometry("1100x700")
 
-scroll_frame = ctk.CTkScrollableFrame(app)
-scroll_frame.pack(fill="both", expand=True)
+header_frame = ctk.CTkFrame(app, height=60, corner_radius=0, fg_color="#1E293B")
+header_frame.pack(fill="x", side="top")
 
-label_nome = ctk.CTkLabel(scroll_frame, text="NOME DO PACIENTE / SENHA",font=("Roboto", 13, "bold"))
-label_nome.grid(row=0,column=0, padx=1, pady=(1,0))
+header_title = ctk.CTkLabel(header_frame, text="NOVO CADASTRO", font=("Arial", 16, "bold"), text_color="#F8FAFC")
+header_title.pack(side="left", padx=20, pady=15)
 
-entry_nome = ctk.CTkEntry(scroll_frame, width=200, placeholder_text="Nome completo")
-entry_nome.grid(row=1,column=0, padx=1, pady=(0,1))
+scroll_frame = ctk.CTkScrollableFrame(app, fg_color="transparent")
+scroll_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
-label_idade = ctk.CTkLabel(scroll_frame, text="DATA DE NASCIMENTO",font=("Roboto", 13, "bold"))
-label_idade.grid(row=2,column=0, padx=1, pady=(1,0),sticky="w")
+scroll_frame.columnconfigure(0, weight=1)
+scroll_frame.columnconfigure(1, weight=1)
 
-entry_idade = ctk.CTkEntry(scroll_frame, placeholder_text="Data de nascimento")
-entry_idade.grid(row=3,column=0, padx=1, pady=(0,1),sticky="w")
+# DADOS DO PACIENTE
+card_paciente = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#F1F5F9", border_width=1, border_color="#E2E8F0")
+card_paciente.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+
+ctk.CTkLabel(card_paciente, text="DADOS DO PACIENTE", font=("Arial", 14, "bold"), text_color="#334155").grid(row=0, column=0, columnspan=2, padx=15, pady=(15, 10), sticky="w")
+
+ctk.CTkLabel(card_paciente, text="Nome Completo*", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=1, column=0, padx=15, pady=(5,0), sticky="w")
+entry_nome = ctk.CTkEntry(card_paciente, width=300, height=35)
+entry_nome.grid(row=2, column=0, columnspan=2, padx=15, pady=(0,10), sticky="w")
+
+ctk.CTkLabel(card_paciente, text="Nascimento (DD/MM/AAAA)*", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=3, column=0, padx=15, pady=(5,0), sticky="w")
+entry_idade = ctk.CTkEntry(card_paciente, width=140, height=35)
+entry_idade.grid(row=4, column=0, padx=15, pady=(0,10), sticky="w")
 entry_idade.bind("<KeyRelease>", formatar_data)
 
-label_hora = ctk.CTkLabel(scroll_frame, text="HORÁRIO DE CHEGADA",font=("Roboto", 13, "bold"))
-label_hora.grid(row=4,column=0, padx=1, pady=(1,0),sticky="w")
-
-entry_hora = ctk.CTkEntry(scroll_frame, placeholder_text="Ex: 14:30")
-entry_hora.grid(row=5,column=0, padx=1,pady=(0,1),sticky="w")
+ctk.CTkLabel(card_paciente, text="Hora Chegada*", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=3, column=1, padx=15, pady=(5,0), sticky="w")
+entry_hora = ctk.CTkEntry(card_paciente, width=140, height=35, placeholder_text="00:00")
+entry_hora.grid(row=4, column=1, padx=15, pady=(0,10), sticky="w")
 entry_hora.bind("<KeyRelease>", formatar_hora)
 
-label_gestante = ctk.CTkLabel(scroll_frame, text="GESTANTE",font=("Roboto", 13, "bold"))
-label_gestante.grid(row=6,column=0, padx=1, pady=(1,0),sticky="w")
+ctk.CTkLabel(card_paciente, text="Paciente Gestante?", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=5, column=0, padx=15, pady=(5,0), sticky="w")
+var_gestante = ctk.StringVar(value="N")
+frame_gestante = ctk.CTkFrame(card_paciente, fg_color="transparent")
+frame_gestante.grid(row=6, column=0, columnspan=2, padx=15, pady=(0, 15), sticky="w")
+ctk.CTkRadioButton(frame_gestante, text='Não', variable=var_gestante, value="N").pack(side="left", padx=(0, 15))
+ctk.CTkRadioButton(frame_gestante, text='Sim', variable=var_gestante, value="S").pack(side="left")
 
-var = ctk.StringVar(value="")
-gestantey = ctk.CTkRadioButton(scroll_frame, text='Sim', variable = var, value = "S")
-gestantey.grid(row=7,column=0,padx=1,pady=(0,1),sticky="w")
+# INFORMAÇÕES
+card_sinais = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#F1F5F9", border_width=1, border_color="#E2E8F0")
+card_sinais.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
-gestanten = ctk.CTkRadioButton(scroll_frame, text='Nao', variable = var, value = "N")
-gestanten.grid(row=8,column=0,padx=1,pady=(0,1),sticky="w")
+ctk.CTkLabel(card_sinais, text="INFORMAÇÕES", font=("Arial", 14, "bold"), text_color="#334155").grid(row=0, column=0, columnspan=2, padx=15, pady=(15, 10), sticky="w")
 
-label_dor = ctk.CTkLabel(scroll_frame, text="NÍVEL DE DOR",font=("Roboto", 13, "bold"))
-label_dor.grid(row=0, column=3, padx=1,pady=(1,0))
+ctk.CTkLabel(card_sinais, text="Nível de Dor (0-10)", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=1, column=0, padx=15, pady=(5,0), sticky="w")
+combobox_dor = ctk.CTkComboBox(card_sinais, values=["0","1","2","3","4","5","6","7","8","9","10"], width=140, height=35)
+combobox_dor.grid(row=2, column=0, padx=15, pady=(0,10), sticky="w")
 
-combobox_dor = ctk.CTkComboBox(scroll_frame,values=["1","2","3","4","5","6","7","8","9","10"] )
-combobox_dor.grid(row=1, column=3, padx=1, pady=(0,1))
-
-label_saturacao = ctk.CTkLabel(scroll_frame, text="SATURAÇÃO",font=("Roboto", 13, "bold"))
-label_saturacao.grid(row=2, column=3, padx=1,pady=(1,0))
-
-entry_saturacao = ctk.CTkEntry(scroll_frame, placeholder_text="Saturação")
-entry_saturacao.grid(row=3, column=3, padx=1,pady=(0,1))
+ctk.CTkLabel(card_sinais, text="Saturação (%)", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=1, column=1, padx=15, pady=(5,0), sticky="w")
+entry_saturacao = ctk.CTkEntry(card_sinais, width=140, height=35)
+entry_saturacao.grid(row=2, column=1, padx=15, pady=(0,10), sticky="w")
 entry_saturacao.bind("<KeyRelease>", formatar_decimal)
 
-label_temp = ctk.CTkLabel(scroll_frame, text="TEMPERATURA EM CELSIUS",font=("Roboto", 13, "bold"))
-label_temp.grid(row=0, column=4, padx=1,pady=(1,0))
-
-entry_temp = ctk.CTkEntry(scroll_frame, placeholder_text="temperatura em celsius")
-entry_temp.grid(row=1, column=4, padx=1,pady=(0,1))
+ctk.CTkLabel(card_sinais, text="Temp. (°C)", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=3, column=0, padx=15, pady=(5,0), sticky="w")
+entry_temp = ctk.CTkEntry(card_sinais, width=140, height=35)
+entry_temp.grid(row=4, column=0, padx=15, pady=(0,10), sticky="w")
 entry_temp.bind("<KeyRelease>", formatar_decimal)
 
-label_pa = ctk.CTkLabel(scroll_frame, text="PRESSÃO ARTERIAL",font=("Roboto", 13, "bold"))
-label_pa.grid(row=2, column=4, padx=1,pady=(1,0))
+ctk.CTkLabel(card_sinais, text="Pressão Arterial", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=3, column=1, padx=15, pady=(5,0), sticky="w")
+entry_pa = ctk.CTkEntry(card_sinais, width=140, height=35, placeholder_text="Ex: 120/80")
+entry_pa.grid(row=4, column=1, padx=15, pady=(0,10), sticky="w")
+entry_pa.bind("<KeyRelease>", formatar_decimal) # Opcional: ajustar regex se PA usar barra (/)
 
-entry_pa = ctk.CTkEntry(scroll_frame, placeholder_text="Pressão arterial")
-entry_pa.grid(row=3, column=4, padx=1,pady=(0,1))
-entry_pa.bind("<KeyRelease>", formatar_decimal)
-
-label_peso = ctk.CTkLabel(scroll_frame, text="PESO",font=("Roboto", 13, "bold"))
-label_peso.grid(row=4, column=3, padx=1,pady=(1,0))
-
-entry_peso = ctk.CTkEntry(scroll_frame, placeholder_text="Peso")
-entry_peso.grid(row=5, column=3, padx=1,pady=(0,1))
+ctk.CTkLabel(card_sinais, text="Peso (Kg)", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=5, column=0, padx=15, pady=(5,0), sticky="w")
+entry_peso = ctk.CTkEntry(card_sinais, width=140, height=35)
+entry_peso.grid(row=6, column=0, padx=15, pady=(0,15), sticky="w")
 entry_peso.bind("<KeyRelease>", formatar_decimal)
 
-label_fa = ctk.CTkLabel(scroll_frame, text="FREQUÊNCIA CARDÍACA",font=("Roboto", 13, "bold"))
-label_fa.grid(row=4, column=4, padx=1,pady=(1,0))
-
-entry_fa = ctk.CTkEntry(scroll_frame, placeholder_text="Frequência cardíaca")
-entry_fa.grid(row=5, column=4, padx=1,pady=(0,1))
+ctk.CTkLabel(card_sinais, text="Freq. Cardíaca", font=("Arial", 12, "bold"), text_color="#64748B").grid(row=5, column=1, padx=15, pady=(5,0), sticky="w")
+entry_fa = ctk.CTkEntry(card_sinais, width=140, height=35)
+entry_fa.grid(row=6, column=1, padx=15, pady=(0,15), sticky="w")
 entry_fa.bind("<KeyRelease>", formatar_decimal)
 
-label_Alergia = ctk.CTkLabel(scroll_frame, text="ALERGIAS",font=("Roboto", 13, "bold"))
-label_Alergia.grid(row=6, column=3,columnspan=2, padx=1,pady=(1,0))
 
-entry_Alergia = ctk.CTkTextbox(scroll_frame, height=5)
-entry_Alergia.grid(row=7, column=3,columnspan=2,sticky="ew", padx=1,pady=(0,1))
+#HISTÓRICO E COMORBIDADES
+card_historico = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#F1F5F9", border_width=1, border_color="#E2E8F0")
+card_historico.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
 
-label_Antecedentes = ctk.CTkLabel(scroll_frame, text="QUEIXA/OBSERVAÇÃO",font=("Roboto", 13, "bold"))
-label_Antecedentes.grid(row=8, column=3,columnspan=2, padx=1,pady=(1,0))
+ctk.CTkLabel(card_historico, text="HISTÓRICO E QUEIXAS", font=("Arial", 14, "bold"), text_color="#334155").pack(anchor="w", padx=15, pady=(15, 10))
 
-entry_Antecedentes = ctk.CTkTextbox(scroll_frame, height=50)
-entry_Antecedentes.grid(row=9, column=3,columnspan=2,sticky="ew", padx=1,pady=(0,1))
+frame_checks = ctk.CTkFrame(card_historico, fg_color="transparent")
+frame_checks.pack(fill="x", padx=15, pady=(0, 10))
 
-btn_confirmar = ctk.CTkButton(scroll_frame, text="CONFIRMAR", command=store_database)
-btn_confirmar.grid(row=11,column=3,columnspan=2, padx=1, pady=1, sticky="ew")
-
-label_comorbidades = ctk.CTkLabel(scroll_frame, text = "COMORBIDADES",font=("Roboto", 13, "bold"))
-label_comorbidades.grid(row=9, column=0, padx=1, pady=1)
-
-comorbidades1 = ["hipertenso","diabetes","cancer","pneumopatia"]
 variaveis1 = []
+comorbidades = ["hipertenso", "alergia", "diabetes", "tosse", "cancer", "outros", "pneumopatia", "PRIORIDADE"]
 
-for idx, i in enumerate(comorbidades1):
-    var2 = ctk.BooleanVar()
-    chk = ctk.CTkCheckBox(scroll_frame, text=i, variable=var2)
-    chk.grid(row =idx+ 10, column = 0, padx=1,pady=(0,1) , sticky="w")
-    variaveis1.append((i, var2))
+for idx, item in enumerate(comorbidades):
+    var_chk = ctk.BooleanVar()
+    chk = ctk.CTkCheckBox(frame_checks, text=item.capitalize(), variable=var_chk)
+    chk.grid(row=idx // 2, column=idx % 2, padx=10, pady=5, sticky="w")
+    variaveis1.append((item, var_chk))
 
-comorbidades2 = ["alergia","tosse","outros", "PRIORIDADE"]
+ctk.CTkLabel(card_historico, text="Alergias (Descrição)", font=("Arial", 12, "bold"), text_color="#64748B").pack(anchor="w", padx=15, pady=(5,0))
+entry_Alergia = ctk.CTkTextbox(card_historico, height=45)
+entry_Alergia.pack(fill="x", padx=15, pady=(0, 10))
 
-for idx, i in enumerate(comorbidades2):
-    var3 = ctk.BooleanVar()
-    chk = ctk.CTkCheckBox(scroll_frame, text=i, variable=var3)
-    chk.grid(row =idx+ 10, column = 1, padx=1,pady=(0,1), sticky="w")
-    variaveis1.append((i, var3))
+ctk.CTkLabel(card_historico, text="Queixa Principal / Observações", font=("Arial", 12, "bold"), text_color="#64748B").pack(anchor="w", padx=15, pady=(5,0))
+entry_Antecedentes = ctk.CTkTextbox(card_historico, height=65)
+entry_Antecedentes.pack(fill="x", padx=15, pady=(0, 15))
 
-label_risco = ctk.CTkLabel(scroll_frame, text="CLASSIFICAÇÃO DE RISCO",font=("Roboto", 13, "bold"))
-label_risco.grid(row=1,column=1, padx=1, pady=(1,0))
+
+#CLASSIFICAÇÃO DE RISCO
+card_risco = ctk.CTkFrame(scroll_frame, corner_radius=12, fg_color="#F1F5F9", border_width=1, border_color="#E2E8F0")
+card_risco.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+
+ctk.CTkLabel(card_risco, text="CLASSIFICAÇÃO DE RISCO (MANCHESTER)", font=("Arial", 14, "bold"), text_color="#334155").pack(anchor="w", padx=15, pady=(15, 15))
+
 risco_var = ctk.StringVar(value="")
+opcoes_risco = [
+    ("VERMELHO - Necessidade de atendimento imediato", "Vermelho", "#DC2626"),
+    ("LARANJA - Muito urgente", "Laranja", "#EA580C"),
+    ("AMARELO - Necessita de atendimento rápido", "Amarelo", "#CA8A04"),
+    ("VERDE - Pouco urgente", "Verde", "#16A34A"),
+    ("AZUL - Não urgente", "Azul", "#2563EB")
+]
 
-ctk.CTkRadioButton(scroll_frame,text="VERMELHO - Necessidade de atendimento imediato",variable=risco_var,value="Vermelho",fg_color="red").grid(row=2,column=1, padx=1, pady=1, sticky="w")
-ctk.CTkRadioButton(scroll_frame,text="LARANJA - Muito urgente",variable=risco_var,value="Laranja",fg_color="orange").grid(row=3,column=1, padx=1, pady=1, sticky="w")
-ctk.CTkRadioButton(scroll_frame,text="AMARELO - Necessita de atendimento rápido",variable=risco_var,value="Amarelo",fg_color="yellow").grid(row=4,column=1, padx=1, pady=1, sticky="w")
-ctk.CTkRadioButton(scroll_frame,text="VERDE - Pouco urgente",variable=risco_var,value="Verde",fg_color="green").grid(row=5,column=1, padx=1, pady=1, sticky="w")
-ctk.CTkRadioButton(scroll_frame,text="AZUL - Não urgente",variable=risco_var,value="Azul",fg_color="blue").grid(row=6,column=1, padx=1, pady=1, sticky="w")
+for texto, valor, cor in opcoes_risco:
+    ctk.CTkRadioButton(card_risco,text=texto,variable=risco_var,value=valor,fg_color=cor,hover_color=cor,font=("Arial", 13)).pack(anchor="w", padx=20, pady=8)
 
-feedback_label = ctk.CTkLabel(scroll_frame, text="")
-feedback_label.grid(row=15,column=1,columnspan=2, padx=1,pady=(10,10),sticky="w")
+
+# BOTÃO AÇÕES E FEEDBACK
+bottom_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+bottom_frame.grid(row=2, column=0, columnspan=2, pady=20)
+
+feedback_label = ctk.CTkLabel(bottom_frame, text="", font=("Arial", 14, "bold"))
+feedback_label.pack(pady=(0, 10))
+
+btn_confirmar = ctk.CTkButton(bottom_frame,text="SALVAR CADASTRO E GERAR QR CODE",height=45,width=350,font=("Arial", 14, "bold"),command=store_database,fg_color="#16A34A",hover_color="#15803D")
+btn_confirmar.pack()
 
 app.mainloop()
